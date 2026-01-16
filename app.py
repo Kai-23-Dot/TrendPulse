@@ -271,7 +271,16 @@ else:
 
 if run_analysis:
     with st.spinner(f"📥 Downloading {ticker} data..."):
-        raw_df, adjusted_start, message = download_data(ticker, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
+        result = download_data(ticker, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
+        
+        # Handle the tuple return (df, adjusted_start, message)
+        if result is None:
+            raw_df, adjusted_start, message = None, None, f"Could not download data for {ticker}"
+        elif isinstance(result, tuple):
+            raw_df, adjusted_start, message = result
+        else:
+            # Fallback for old format (just DataFrame)
+            raw_df, adjusted_start, message = result, None, None
     
     if raw_df is None:
         st.error(f"❌ {message if message else f'Could not download data for {ticker}'}")
