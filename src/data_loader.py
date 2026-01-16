@@ -19,6 +19,35 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
+import time
+
+
+def _download_with_retry(ticker, start=None, end=None, period=None, max_retries=3):
+    """
+    Download data with retry logic for Streamlit Cloud compatibility.
+    Yahoo Finance often rate-limits Streamlit Cloud's shared IPs.
+    """
+    for attempt in range(max_retries):
+        try:
+            if period:
+                df = yf.download(ticker, period=period, progress=False)
+            else:
+                df = yf.download(ticker, start=start, end=end, progress=False)
+            
+            if not df.empty:
+                return df
+            
+            # If empty, wait and retry
+            if attempt < max_retries - 1:
+                time.sleep(1 * (attempt + 1))  # Exponential backoff: 1s, 2s, 3s
+                
+        except Exception as e:
+            if attempt < max_retries - 1:
+                time.sleep(1 * (attempt + 1))
+            else:
+                raise e
+    
+    return pd.DataFrame()  # Return empty if all retries failed
 
 
 def download_data(ticker, start_date, end_date):
@@ -26,6 +55,7 @@ def download_data(ticker, start_date, end_date):
     Downloads historical stock data from Yahoo Finance.
     
     Automatically adjusts start_date if it's before the stock's first trading day.
+    Uses retry logic to handle Streamlit Cloud rate limiting.
     
     Returns:
         tuple: (DataFrame, adjusted_start_date or None, message or None)
@@ -34,19 +64,16 @@ def download_data(ticker, start_date, end_date):
                - message: Info message about date adjustment, or error message
     """
     try:
-        # First, try to get the stock info to find earliest available date
-        stock = yf.Ticker(ticker)
-        
-        # Try downloading with the requested date range
-        df = yf.download(ticker, start=start_date, end=end_date, progress=False)
+        # Try downloading with the requested date range (with retry)
+        df = _download_with_retry(ticker, start=start_date, end=end_date)
         
         if df.empty:
             # If empty, try to find the stock's first available date
-            # Download max history to find the earliest date
-            df_max = yf.download(ticker, period="max", progress=False)
+            # Download max history to find the earliest date (with retry)
+            df_max = _download_with_retry(ticker, period="max")
             
             if df_max.empty:
-                return None, None, f"No data available for ticker '{ticker}'. Please verify the symbol."
+                return None, None, f"No data available for ticker '{ticker}'. Please verify the symbol or try again."
             
             # Get the first available date
             first_available = df_max.index[0]
@@ -62,11 +89,11 @@ def download_data(ticker, start_date, end_date):
                 if first_available > end_dt:
                     return None, None, f"'{ticker}' started trading on {adjusted_start}, which is after your end date."
                 
-                # Re-download with adjusted dates
-                df = yf.download(ticker, start=adjusted_start, end=end_date, progress=False)
+                # Re-download with adjusted dates (with retry)
+                df = _download_with_retry(ticker, start=adjusted_start, end=end_date)
                 
                 if df.empty:
-                    return None, None, f"Could not download data for '{ticker}'."
+                    return None, None, f"Could not download data for '{ticker}'. Yahoo Finance may be rate-limiting. Try again in a moment."
                 
                 if isinstance(df.columns, pd.MultiIndex):
                     df.columns = df.columns.droplevel(1)
@@ -83,7 +110,7 @@ def download_data(ticker, start_date, end_date):
         
     except Exception as e:
         print(f"Error downloading data for {ticker}: {e}")
-        return None, None, f"Error downloading data: {str(e)}"
+        return None, None, f"Error downloading data: {str(e)}. Yahoo Finance may be temporarily unavailable."
 
 
 def augment_data(df):
