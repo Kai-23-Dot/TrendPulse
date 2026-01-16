@@ -11,6 +11,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from datetime import date, timedelta
+from pathlib import Path
 from src.data_loader import download_data, augment_data, preprocess_pipeline, create_sequences, FEATURE_COLUMNS
 from src.model import build_lstm_model, train_model
 from src.utils import calculate_metrics, calculate_naive_metrics
@@ -147,33 +148,26 @@ with st.sidebar:
     st.markdown("## 🎯 Configuration")
     st.markdown("---")
     
-    # Popular Stock Tickers (100+)
-    POPULAR_STOCKS = [
-        # Tech Giants
-        "AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "META", "NVDA", "TSLA", "AMD", "INTC",
-        "CRM", "ORCL", "ADBE", "CSCO", "IBM", "QCOM", "TXN", "AVGO", "NOW", "SNOW",
-        # Finance
-        "JPM", "BAC", "WFC", "GS", "MS", "C", "BLK", "SCHW", "AXP", "V", "MA", "PYPL",
-        # Healthcare
-        "UNH", "JNJ", "PFE", "MRK", "ABBV", "LLY", "TMO", "ABT", "CVS", "AMGN",
-        # Consumer
-        "WMT", "HD", "MCD", "NKE", "SBUX", "TGT", "COST", "LOW", "DIS", "NFLX",
-        # Energy
-        "XOM", "CVX", "COP", "SLB", "EOG", "PXD", "OXY", "MPC", "VLO", "PSX",
-        # Industrial
-        "CAT", "BA", "HON", "UPS", "FDX", "GE", "MMM", "LMT", "RTX", "DE",
-        # ETFs
-        "SPY", "QQQ", "DIA", "IWM", "VTI", "VOO", "VXX", "GLD", "SLV", "TLT",
-        "XLF", "XLK", "XLE", "XLV", "XLI", "XLY", "XLP", "XLU", "ARKK", "ARKG",
-        # Crypto-related
-        "COIN", "MARA", "RIOT", "MSTR", "SQ", "HOOD",
-        # Other Popular
-        "UBER", "LYFT", "ABNB", "RBLX", "PLTR", "SOFI", "RIVN", "LCID", "NIO", "BABA"
-    ]
-    POPULAR_STOCKS = sorted(set(POPULAR_STOCKS))
+    # Load full US stock ticker database
+    @st.cache_data
+    def load_ticker_database():
+        """Load all US stock tickers from database file."""
+        ticker_file = Path("data/us_tickers.txt")
+        if ticker_file.exists():
+            with open(ticker_file, 'r') as f:
+                tickers = [line.strip() for line in f if line.strip()]
+            return sorted(tickers)
+        else:
+            # Fallback to popular stocks if database not available
+            return sorted(["SPY", "QQQ", "AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "META", "GOOGL", 
+                          "JPM", "V", "MA", "UNH", "JNJ", "WMT", "HD", "DIS", "NFLX", "BA", "CAT"])
+    
+    ALL_TICKERS = load_ticker_database()
     
     # Stock Selection
     st.markdown("### 📈 Stock Selection")
+    st.caption(f"📊 {len(ALL_TICKERS):,} stocks available")
+    
     use_custom = st.checkbox("Enter custom ticker", value=False)
     
     if use_custom:
@@ -181,9 +175,9 @@ with st.sidebar:
     else:
         ticker = st.selectbox(
             "Select Stock",
-            options=POPULAR_STOCKS,
-            index=POPULAR_STOCKS.index("SPY") if "SPY" in POPULAR_STOCKS else 0,
-            help="Search by typing or scroll to select"
+            options=ALL_TICKERS,
+            index=ALL_TICKERS.index("SPY") if "SPY" in ALL_TICKERS else 0,
+            help="Type to search from 6,600+ US stocks"
         )
     
     st.markdown("### 📅 Date Range")
