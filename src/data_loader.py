@@ -22,18 +22,68 @@ from sklearn.preprocessing import MinMaxScaler
 
 
 def download_data(ticker, start_date, end_date):
-    """Downloads historical stock data from Yahoo Finance."""
+    """
+    Downloads historical stock data from Yahoo Finance.
+    
+    Automatically adjusts start_date if it's before the stock's first trading day.
+    
+    Returns:
+        tuple: (DataFrame, adjusted_start_date or None, message or None)
+               - DataFrame: The stock data, or None if download failed
+               - adjusted_start_date: The actual start date used if different from requested
+               - message: Info message about date adjustment, or error message
+    """
     try:
-        df = yf.download(ticker, start=start_date, end=end_date)
+        # First, try to get the stock info to find earliest available date
+        stock = yf.Ticker(ticker)
+        
+        # Try downloading with the requested date range
+        df = yf.download(ticker, start=start_date, end=end_date, progress=False)
+        
         if df.empty:
-            return None
+            # If empty, try to find the stock's first available date
+            # Download max history to find the earliest date
+            df_max = yf.download(ticker, period="max", progress=False)
+            
+            if df_max.empty:
+                return None, None, f"No data available for ticker '{ticker}'. Please verify the symbol."
+            
+            # Get the first available date
+            first_available = df_max.index[0]
+            
+            # Check if start_date is before the first available date
+            start_dt = pd.to_datetime(start_date)
+            end_dt = pd.to_datetime(end_date)
+            
+            if start_dt < first_available:
+                # Adjust start date to first available
+                adjusted_start = first_available.strftime('%Y-%m-%d')
+                
+                if first_available > end_dt:
+                    return None, None, f"'{ticker}' started trading on {adjusted_start}, which is after your end date."
+                
+                # Re-download with adjusted dates
+                df = yf.download(ticker, start=adjusted_start, end=end_date, progress=False)
+                
+                if df.empty:
+                    return None, None, f"Could not download data for '{ticker}'."
+                
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.droplevel(1)
+                df.reset_index(inplace=True)
+                
+                return df, adjusted_start, f"📅 '{ticker}' started trading on {adjusted_start}. Date range adjusted automatically."
+            else:
+                return None, None, f"No data available for '{ticker}' in the selected date range."
+        
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.droplevel(1)
         df.reset_index(inplace=True)
-        return df
+        return df, None, None
+        
     except Exception as e:
         print(f"Error downloading data for {ticker}: {e}")
-        return None
+        return None, None, f"Error downloading data: {str(e)}"
 
 
 def augment_data(df):

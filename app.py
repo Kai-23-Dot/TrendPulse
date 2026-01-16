@@ -271,11 +271,15 @@ else:
 
 if run_analysis:
     with st.spinner(f"📥 Downloading {ticker} data..."):
-        raw_df = download_data(ticker, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
+        raw_df, adjusted_start, message = download_data(ticker, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
     
     if raw_df is None:
-        st.error(f"❌ Could not download data for {ticker}")
+        st.error(f"❌ {message if message else f'Could not download data for {ticker}'}")
     else:
+        # Show info message if date was adjusted
+        if message:
+            st.info(message)
+        
         with st.spinner("🔧 Engineering features..."):
             df_augmented = augment_data(raw_df)
         
@@ -283,6 +287,7 @@ if run_analysis:
         st.session_state.raw_df = raw_df
         st.session_state.df_augmented = df_augmented
         st.session_state.ticker = ticker
+        st.session_state.adjusted_start = adjusted_start
         
         # Preprocessing
         with st.spinner("⚡ Preprocessing..."):
