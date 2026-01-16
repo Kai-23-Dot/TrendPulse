@@ -20,12 +20,61 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 import time
+import requests
+import io
+from datetime import datetime
+
+def _download_manual_fallback(ticker, start_date, end_date):
+    """
+    Fallback method: Download directly from Yahoo Query API using requests.
+    This bypasses yfinance library internals which might be blocked or erroring.
+    """
+    try:
+        # Convert dates to unix timestamps
+        start_ts = int(pd.Timestamp(start_date).timestamp())
+        end_ts = int(pd.Timestamp(end_date).timestamp())
+        
+        url = f"https://query1.finance.yahoo.com/v7/finance/download/{ticker}"
+        params = {
+            'period1': start_ts,
+            'period2': end_ts,
+            'interval': '1d',
+            'events': 'history',
+            'includeAdjustedClose': 'true'
+        }
+        
+        # Rotated user agents to look like real browsers
+        user_agents = [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0'
+        ]
+        
+        headers = {
+            'User-Agent': user_agents[0],
+            'Accept': '*/*'
+        }
+        
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            df = pd.read_csv(io.StringIO(response.text))
+            df['Date'] = pd.to_datetime(df['Date'])
+            df.set_index('Date', inplace=True)
+            return df
+            
+        return pd.DataFrame()
+        
+    except Exception as e:
+        print(f"Manual fallback failed: {e}")
+        return pd.DataFrame()
 
 
 def _download_with_retry(ticker, start=None, end=None, period=None, max_retries=3):
     """
-    Download data with retry logic for Streamlit Cloud compatibility.
+    Download data with retry logic and fallbacks for Streamlit Cloud compatibility.
     """
+    # Attempt 1-3: Standard yfinance with backoff
     for attempt in range(max_retries):
         try:
             if period:
@@ -36,16 +85,17 @@ def _download_with_retry(ticker, start=None, end=None, period=None, max_retries=
             if not df.empty:
                 return df
             
-            # If empty, wait and retry with increasing delay
-            if attempt < max_retries - 1:
-                time.sleep(2 * (attempt + 1))
+            time.sleep(1 + attempt)
                 
         except Exception as e:
-            if attempt < max_retries - 1:
-                time.sleep(2 * (attempt + 1))
-            else:
-                raise e
+            time.sleep(1 + attempt)
     
+    # Attempt 4: Manual Fallback (The Nuclear Option)
+    if start and end and not period:
+        # If period is requested, we can't easily map to start/end for manual, but usually start/end is used by app
+        print(f"yfinance failed, attempting manual fallback for {ticker}...")
+        return _download_manual_fallback(ticker, start, end)
+            
     return pd.DataFrame()
 
 
