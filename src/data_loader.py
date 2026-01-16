@@ -20,30 +20,49 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 import time
+import requests
+
+
+def _get_session():
+    """
+    Create a requests session with browser-like headers.
+    This helps bypass Yahoo Finance rate limiting on Streamlit Cloud.
+    """
+    session = requests.Session()
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate',
+        'Connection': 'keep-alive',
+    })
+    return session
 
 
 def _download_with_retry(ticker, start=None, end=None, period=None, max_retries=3):
     """
-    Download data with retry logic for Streamlit Cloud compatibility.
+    Download data with retry logic and custom session for Streamlit Cloud compatibility.
     Yahoo Finance often rate-limits Streamlit Cloud's shared IPs.
     """
+    session = _get_session()
+    
     for attempt in range(max_retries):
         try:
             if period:
-                df = yf.download(ticker, period=period, progress=False)
+                df = yf.download(ticker, period=period, progress=False, session=session)
             else:
-                df = yf.download(ticker, start=start, end=end, progress=False)
+                df = yf.download(ticker, start=start, end=end, progress=False, session=session)
             
             if not df.empty:
                 return df
             
-            # If empty, wait and retry
+            # If empty, wait and retry with increasing delay
             if attempt < max_retries - 1:
-                time.sleep(1 * (attempt + 1))  # Exponential backoff: 1s, 2s, 3s
+                time.sleep(2 * (attempt + 1))  # 2s, 4s, 6s delays
                 
         except Exception as e:
             if attempt < max_retries - 1:
-                time.sleep(1 * (attempt + 1))
+                time.sleep(2 * (attempt + 1))
             else:
                 raise e
     
