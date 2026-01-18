@@ -79,55 +79,98 @@ except ImportError:
 
 def _download_manual_fallback(ticker, start_date, end_date):
     """
-    Fallback method: Download directly from Yahoo Query API using requests.
-    This bypasses yfinance library internals which might be blocked or erroring.
+    Fallback method: 
+    1. Try Yahoo Chart API (v8) with robust headers and session.
+    2. Try Stooq via pandas_datareader as a final backup (ignoring IP blocks).
     """
     try:
-        # Convert dates to unix timestamps
+        # --- STRATEGY 1: Yahoo Chart API (v8) ---
+        # Calculate timestamps
         start_ts = int(pd.Timestamp(start_date).timestamp())
         end_ts = int(pd.Timestamp(end_date).timestamp())
         
-        # Try both query2 and query1
+        # Base headers
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+        }
+        
+        s = requests.Session()
+        s.headers.update(headers)
+        
+        # 1. First, visit the main page to get cookies
+        try:
+            s.get(f"https://finance.yahoo.com/quote/{ticker}", timeout=3)
+        except:
+            pass
+        
+        # 2. Try the API with the session that has cookies
         for subdomain in ["query2", "query1"]:
-            url = f"https://{subdomain}.finance.yahoo.com/v7/finance/download/{ticker}"
+            url = f"https://{subdomain}.finance.yahoo.com/v8/finance/chart/{ticker}"
             params = {
                 'period1': start_ts,
                 'period2': end_ts,
                 'interval': '1d',
                 'events': 'history',
-                'includeAdjustedClose': 'true'
+                'includePrePost': 'false'
             }
             
-            # Rotated user agents (Updated for 2026)
-            user_agents = [
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
-                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15',
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0'
-            ]
-            
-            headers = {
-                'User-Agent': user_agents[0],
-                'Accept': '*/*'
-            }
-            
-            # Use cached session if available, otherwise standard requests
-            requester = session if session else requests
-            response = requester.get(url, params=params, headers=headers, timeout=10)
-            
-            if response.status_code == 200:
-                df = pd.read_csv(io.StringIO(response.text))
-                if not df.empty and 'Date' in df.columns:
-                    df['Date'] = pd.to_datetime(df['Date'])
-                    df.set_index('Date', inplace=True)
-                    return df
-            
-            time.sleep(1)
-            
-        return pd.DataFrame()
-        
+            try:
+                response = s.get(url, params=params, timeout=5)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if 'chart' in data and 'result' in data['chart']:
+                        result = data['chart']['result'][0]
+                        if 'timestamp' in result and 'indicators' in result:
+                            timestamps = result['timestamp']
+                            quote = result['indicators']['quote'][0]
+                            
+                            df = pd.DataFrame({
+                                'Date': pd.to_datetime(timestamps, unit='s'),
+                                'Open': quote.get('open', []),
+                                'High': quote.get('high', []),
+                                'Low': quote.get('low', []),
+                                'Close': quote.get('close', []),
+                                'Volume': quote.get('volume', [])
+                            })
+                            
+                            df.dropna(inplace=True)
+                            if not df.empty:
+                                df.set_index('Date', inplace=True)
+                                df = df[(df.index >= pd.Timestamp(start_date)) & (df.index <= pd.Timestamp(end_date))]
+                                return df
+            except:
+                pass
+    
     except Exception as e:
-        print(f"Manual fallback failed: {e}")
-        return pd.DataFrame()
+        print(f"Yahoo fallback strategy failed: {e}")
+
+    # --- STRATEGY 2: Stooq (Via pandas_datareader) ---
+    print(f"Attempting Stooq fallback for {ticker}...")
+    try:
+        import pandas_datareader.data as web
+        # Stooq often uses 'US' suffix, try both raw and suffix
+        for symbol in [ticker, f"{ticker}.US"]:
+            try:
+                df = web.DataReader(symbol, 'stooq', start=start_date, end=end_date)
+                if not df.empty:
+                    # Stooq returns index as 'Date' already, but we need to ensure sort order
+                    # Stooq returns Open, High, Low, Close, Volume
+                    df.sort_index(inplace=True)
+                    return df
+            except:
+                pass
+    except Exception as e:
+        print(f"Stooq fallback failed: {e}")
+
+    return pd.DataFrame()
 
 
 def _download_with_retry(ticker, start=None, end=None, period=None, max_retries=3):
