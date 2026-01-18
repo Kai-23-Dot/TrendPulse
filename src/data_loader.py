@@ -70,6 +70,66 @@ def _download_manual_fallback(ticker, start_date, end_date):
         return pd.DataFrame()
 
 
+try:
+    import requests_cache
+    session = requests_cache.CachedSession('yfinance.cache')
+    session.headers['User-agent'] = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15'
+except ImportError:
+    session = None
+
+def _download_manual_fallback(ticker, start_date, end_date):
+    """
+    Fallback method: Download directly from Yahoo Query API using requests.
+    This bypasses yfinance library internals which might be blocked or erroring.
+    """
+    try:
+        # Convert dates to unix timestamps
+        start_ts = int(pd.Timestamp(start_date).timestamp())
+        end_ts = int(pd.Timestamp(end_date).timestamp())
+        
+        # Try both query2 and query1
+        for subdomain in ["query2", "query1"]:
+            url = f"https://{subdomain}.finance.yahoo.com/v7/finance/download/{ticker}"
+            params = {
+                'period1': start_ts,
+                'period2': end_ts,
+                'interval': '1d',
+                'events': 'history',
+                'includeAdjustedClose': 'true'
+            }
+            
+            # Rotated user agents (Updated for 2026)
+            user_agents = [
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15',
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0'
+            ]
+            
+            headers = {
+                'User-Agent': user_agents[0],
+                'Accept': '*/*'
+            }
+            
+            # Use cached session if available, otherwise standard requests
+            requester = session if session else requests
+            response = requester.get(url, params=params, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                df = pd.read_csv(io.StringIO(response.text))
+                if not df.empty and 'Date' in df.columns:
+                    df['Date'] = pd.to_datetime(df['Date'])
+                    df.set_index('Date', inplace=True)
+                    return df
+            
+            time.sleep(1)
+            
+        return pd.DataFrame()
+        
+    except Exception as e:
+        print(f"Manual fallback failed: {e}")
+        return pd.DataFrame()
+
+
 def _download_with_retry(ticker, start=None, end=None, period=None, max_retries=3):
     """
     Download data with retry logic and fallbacks for Streamlit Cloud compatibility.
@@ -77,13 +137,26 @@ def _download_with_retry(ticker, start=None, end=None, period=None, max_retries=
     # Attempt 1-3: Standard yfinance with backoff
     for attempt in range(max_retries):
         try:
+            # Use session with yfinance if available
             if period:
-                df = yf.download(ticker, period=period, progress=False)
+                df = yf.download(ticker, period=period, progress=False, session=session)
             else:
-                df = yf.download(ticker, start=start, end=end, progress=False)
+                df = yf.download(ticker, start=start, end=end, progress=False, session=session)
             
             if not df.empty:
                 return df
+            
+            # Try Ticker().history() as alternative method
+            try:
+                dat = yf.Ticker(ticker, session=session).history(
+                    period=period if period else None, 
+                    start=start if not period else None, 
+                    end=end if not period else None
+                )
+                if not dat.empty:
+                    return dat
+            except:
+                pass
             
             time.sleep(1 + attempt)
                 
