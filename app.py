@@ -132,6 +132,14 @@ st.markdown("""
     
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
+    
+    /* Hide the dropdown arrow to make it look like a search bar */
+    div[data-baseweb="select"] > div:nth-child(1) > div:nth-child(2) {
+        display: none;
+    }
+    div[data-baseweb="select"] svg {
+        display: none !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -168,17 +176,12 @@ with st.sidebar:
     st.markdown("### 📈 Stock Selection")
     st.caption(f"📊 {len(ALL_TICKERS):,} stocks available")
     
-    use_custom = st.checkbox("Enter custom ticker", value=False)
-    
-    if use_custom:
-        ticker = st.text_input("Custom Ticker", "SPY", help="Enter any valid stock symbol").upper()
-    else:
-        ticker = st.selectbox(
-            "Select Stock",
-            options=ALL_TICKERS,
-            index=ALL_TICKERS.index("SPY") if "SPY" in ALL_TICKERS else 0,
-            help="Type to search from 6,600+ US stocks"
-        )
+    ticker = st.selectbox(
+        "Select Stock",
+        options=ALL_TICKERS,
+        index=ALL_TICKERS.index("SPY") if "SPY" in ALL_TICKERS else 0,
+        help="Type to search from 6,600+ US stocks"
+    )
     
     st.markdown("### 📅 Date Range")
     col1, col2 = st.columns(2)
