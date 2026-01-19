@@ -245,7 +245,7 @@ class StreamlitCallback(Callback):
 # ================================
 # MAIN TABS
 # ================================
-tab1, tab2, tab3 = st.tabs(["📊 Data Exploration", "🚀 Model Training & Evaluation", "📈 Predictions & Results"])
+tab1, tab2, tab3, tab4 = st.tabs(["📊 Data Exploration", "🚀 Model Training & Evaluation", "📈 Predictions & Results", "📘 Documentation"])
 
 # Initialize session state
 if 'model_trained' not in st.session_state:
@@ -511,6 +511,9 @@ with tab2:
 # ================================
 # TAB 3: PREDICTIONS & RESULTS
 # ================================
+# ================================
+# TAB 3: PREDICTIONS & RESULTS
+# ================================
 with tab3:
     if st.session_state.model_trained and st.session_state.predictions:
         preds = st.session_state.predictions
@@ -586,17 +589,65 @@ with tab3:
         st.dataframe(detail_df.style.format({'Actual': '${:.2f}', 'Predicted': '${:.2f}', 'Error': '${:.2f}'}), 
                     use_container_width=True)
         
-        # Disclaimer
-        st.markdown("---")
-        st.markdown("""
-        <div class="disclaimer-box">
-            ⚠️ <strong>Important Disclaimer</strong><br><br>
-            These predictions are from a deep learning model trained on historical patterns. 
-            Stock prices are influenced by unforeseen events, news, and market sentiment that 
-            the model cannot capture. Past performance does not guarantee future results. 
-            <strong>This is not financial advice.</strong>
-        </div>
-        """, unsafe_allow_html=True)
-        
     else:
         st.info("👈 Complete the training in the **Model Training** tab to see predictions.")
+
+# ================================
+# TAB 4: DOCUMENTATION & ABOUT
+# ================================
+with tab4:
+    st.markdown("## 📘 Documentation & Usage")
+    
+    st.markdown("""
+    ### 🧠 How It Works
+    **TrendPulse** uses a **Long Short-Term Memory (LSTM)** neural network, a type of deep learning model specifically designed for sequential data like stock prices.
+    
+    1.  **Data Loading**: Fetches historical daily data (Open, High, Low, Close, Volume).
+    2.  **Feature Engineering**: Calculates moving averages, volatility, RSI, and momentum to give the model context beyond just raw price.
+    3.  **Preprocessing**: Scales data to 0-1 range to help the neural network converge faster.
+    4.  **Training**: The LSTM looks at a 'window' of past days (e.g., 60 days) to learn patterns that lead to the next day's return.
+    """)
+    
+    st.markdown("---")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("### 📊 Metrics Explained")
+        st.markdown("""
+        - **RMSE (Root Mean Square Error)**: The average "miss" distance. Lower is better. If RMSE is $5, the model is typically off by about $5.
+        - **MAE (Mean Absolute Error)**: Similar to RMSE but less sensitive to extreme outliers.
+        - **R² (R-Squared)**: How much of the variance is explained. 1.0 is perfect, 0.0 is random guessing. Negative means it's worse than just predicting the average.
+        """)
+        
+    with col2:
+        st.markdown("### 🚫 Limitations")
+        st.markdown("""
+        - **Lagging Indicators**: Moving averages summarize the past. If the market suddenly crashes today, the averages won't reflect it instantly.
+        - **External Shocks**: The model only knows price history. It does not know about earnings reports, CEO scandals, or geopolitical events.
+        - **Pattern Breaks**: Strategies that worked in 2020 might fail in 2025 due to changing market regimes (Regime Shift).
+        """)
+        
+    st.markdown("---")
+    
+    st.markdown("""
+    ### ⚖️ Ethical & Financial Disclaimer
+    > [!WARNING]
+    > **NOT FINANCIAL ADVICE**
+    
+    This application is for **educational and research purposes only**. 
+    
+    - **No Guarantees**: Machine learning models calculate probabilities based on past correlations, which do not guarantee future performance.
+    - **Risk**: Trading stocks involves substantial risk of loss. Never trade with money you cannot afford to lose.
+    - **Transparency**: Code is open-source to demonstrate how these models work (and fail).
+    """)
+    
+    st.markdown("---")
+    st.markdown(
+        '<div style="text-align: center; padding: 20px;">'
+        '<a href="https://github.com/Kai-23-Dot/TrendPulse" target="_blank" style="text-decoration: none;">'
+        '<button style="background-color: #24292e; color: white; padding: 12px 24px; border-radius: 8px; border: none; font-size: 16px; font-weight: 600; cursor: pointer;">'
+        '💻 View Source Code on GitHub'
+        '</button></a>'
+        '</div>', 
+        unsafe_allow_html=True
+    )
